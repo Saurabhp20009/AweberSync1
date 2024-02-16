@@ -13,6 +13,21 @@ const mySchema = new Schema([
   },
 ]);
 
-const ModelTestData = mongoose.model("TestData", mySchema);
+const MetaDataSchema= new Schema([{
+  LastFetchedRowHashValue: String
+}])
 
-module.exports = ModelTestData;
+const TokenDataSchema=new Schema([
+  {
+    access_token: String,
+    refresh_token: String
+  }
+])
+
+
+
+const ModelTestData = mongoose.model("TestData", mySchema);
+const ModelMetaData= mongoose.model("MetaData",MetaDataSchema)
+const ModelTokenData= mongoose.model("TokenData",TokenDataSchema)
+
+module.exports = {ModelTestData,ModelMetaData,ModelTokenData};

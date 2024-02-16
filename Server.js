@@ -6,10 +6,12 @@ const {
 const cron = require("node-cron");
 
 async function main() {
+   
+  await gettingSheetDataAndStoringInDB();
 
-  //evoking function every minutes
+  //evoking function every minute
   cron.schedule("* * * * *", async () => {
-    console.log("Fetching documents...");
+    console.log("Fetching documents from sheet...");
     await gettingSheetDataAndStoringInDB();
     await fetchDataFromDBAndSendToAPI();
   });

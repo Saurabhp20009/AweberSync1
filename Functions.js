@@ -1,7 +1,7 @@
 const { google } = require("googleapis");
-const ModelTestData = require("./Connection");
+const { ModelTestData, ModelMetaData } = require("./Connection");
 const crypto = require("crypto");
-const fs= require('fs')
+const fs = require("fs");
 const { addingSubscribers } = require("./AweberFunctions");
 
 //Authentication
@@ -27,7 +27,7 @@ async function gettingSheetDataAndStoringInDB() {
 
   try {
     const spreadsheetId = "1MJxJjA_uhTH2D3WHp6wdNhBFmARURIANH_lowy9wbro";
-    const range = "MailerCloud!A1:H100";
+    const range = "MailerCloud!A1:H500";
 
     const response = await sheet.spreadsheets.values.get({
       spreadsheetId,
@@ -37,10 +37,10 @@ async function gettingSheetDataAndStoringInDB() {
     //getting every rows in array
 
     const rows = response.data.values;
-    console.log(rows)
     const dataInDB = await ModelTestData.find();
+    const CheckingMetaData = await ModelMetaData.find();
 
-    if (!dataInDB || dataInDB.length <= 0) {
+    if (!dataInDB || (dataInDB.length <= 0 && CheckingMetaData.length <= 0)) {
       //looping for accessing every elements of rows
       for (let i = 1; i <= rows.length - 1; i++) {
         const rowHash = await createHash(rows[i]);
@@ -53,28 +53,46 @@ async function gettingSheetDataAndStoringInDB() {
         });
 
         DocumentInstance.save();
+
+        if (i === rows.length - 1) {
+          console.log(true);
+          const MetaDataModelInstance = new ModelMetaData({
+            LastFetchedRowHashValue: rowHash,
+          });
+
+          MetaDataModelInstance.save();
+          console.log("Last fetched row hash value is created....");
+        }
       }
     }
 
     //Getting only updated data from the sheet
     else {
-      for (let i = 1; i <= rows.length - 1; i++) {
+      const FindResult = await ModelMetaData.find();
+
+      let FetchingIndex;
+
+      for (let i = 0; i <= rows.length - 1; i++) {
+        const rowHash = await createHash(rows[i]);
+        if (rowHash === FindResult[0].LastFetchedRowHashValue) {
+          FetchingIndex = i + 1;
+        }
+      }
+
+      for (let i = FetchingIndex; i <= rows.length - 1; i++) {
         const rowHash = await createHash(rows[i]);
 
-        const checkingRecordInDB = await ModelTestData.find({
+        const DocumentInstance = new ModelTestData({
+          FirstName: rows[i][0],
+          LastName: rows[i][1],
+          Email: rows[i][3],
           HashValue: rowHash,
         });
 
-        if (checkingRecordInDB.length <= 0) {
-          const DocumentInstance = new ModelTestData({
-            FirstName: rows[i][0],
-            LastName: rows[i][1],
-            Email: rows[i][3],
-            HashValue: rowHash,
-          });
+        DocumentInstance.save();
 
-          DocumentInstance.save();
-        }
+        await ModelMetaData.updateOne({ LastFetchedRowHashValue: rowHash });
+        console.log("Last fetched row hash value is updated....");
       }
     }
   } catch (error) {
@@ -83,92 +101,25 @@ async function gettingSheetDataAndStoringInDB() {
 }
 
 async function fetchDataFromDBAndSendToAPI() {
-  let fileReadResult;
-  try {
-    fileReadResult = fs.readFileSync("MetaData.json", "utf8");
-  } catch (err) {
-    console.error("Error reading file:", err);
-  }
-
-  //fetching data containing values
-  const dataInDB = await ModelTestData.find({
-    $and: [
-      { FirstName: { $exists: true } },
-      { LastName: { $exists: true } },
-      { Email: { $exists: true } },
-      { HashValue: { $exists: true } },
-      {
-        $nor: [
-          { FirstName: null },
-          { LastName: null },
-          { Email: null },
-          { HashValue: null },
-        ],
-      },
-    ],
-  });
+  var counter = 0;
+  //fetching 100 data from db
+  const dataInDB = await ModelTestData.find().limit(100);
 
   let length = dataInDB.length;
 
   if (length <= 100) {
     for (let i = 0; i <= length - 1; i++) {
-      
-    
-      const APIResult = await addingSubscribers(dataInDB[i]);     
-      console.log(APIResult)
-      if (APIResult===201) {
-        const date = new Date();
+      await addingSubscribers(dataInDB[i]);
 
-        fileReadResult.LastTimeFetch = date;
-        fileReadResult.LastIDFetch = dataInDB[i]._id;
-        fileReadResult.LastHashValue = dataInDB[i].HashValue;
-
-        fs.writeFile("MetaData.json", fileReadResult, "utf8", (err) => {
-          if (err) {
-            console.error("Error writing to file:", err);
-            return;
-          }
-          console.log("MetaData file content modified successfully.");
-        });
-
-        await ModelTestData.updateOne(
-          { _id: dataInDB[i]._id },
-          { $set: { HashValue: dataInDB[i].HashValue } }
-        );
-      }
+      await ModelTestData.deleteOne({ _id: dataInDB[i]._id });
     }
   } else {
     for (let i = 0; i <= 99; i++) {
-      const APIResult = await addingSubscribers(dataInDB[i]);
-
-      if (APIResult===201) {
-
-        const date = new Date();
-
-        fileReadResult.LastTimeFetch = date;
-        fileReadResult.LastIDFetch = dataInDB[i]._id;
-        fileReadResult.LastHashValue = dataInDB[i].HashValue;
-
-        fs.writeFile("MetaData.json", fileReadResult, "utf8", (err) => {
-          if (err) {
-            console.error("Error writing to file:", err);
-            return;
-          }
-          console.log("MetaData file content modified successfully.");
-        });
-    
-         
-
-        await ModelTestData.updateOne(
-          { _id: dataInDB[i]._id },
-          { $set: { HashValue: dataInDB[i].HashValue } }
-        );
-      }
+      await addingSubscribers(dataInDB[i]);
+      await ModelTestData.deleteOne({ _id: dataInDB[i]._id });
     }
   }
 }
-
-fetchDataFromDBAndSendToAPI();
 
 module.exports = {
   gettingSheetDataAndStoringInDB,

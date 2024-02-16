@@ -4,7 +4,7 @@ const OAUTH_URL = "https://auth.aweber.com/oauth2";
 const TOKEN_URL = "https://auth.aweber.com/oauth2/token";
 const axios = require("axios");
 const fs = require("fs");
-const { error } = require("console");
+const { ModelTokenData } = require("./Connection");
 
 const scopes = [
   "account.read",
@@ -52,50 +52,51 @@ async function getAccessToken() {
 
   console.log(authorizationResponse);
   const user = await aweberAuth.code.getToken(authorizationResponse);
-  const data = {
+
+  const TokenDataInstance = new ModelTokenData({
     access_token: user.data.access_token,
     refresh_token: user.data.refresh_token,
-  };
+  });
 
-  const fileData = JSON.stringify(data, null, 2);
-
-  fs.writeFileSync("data.json", fileData);
-  console.log("JSON file created successfully");
+  TokenDataInstance.save();
+  console.log("Access token and refresh token created successfully...");
 
   return user;
 }
 
+async function RevokeAccessToken() {
+  const tokenData = await ModelTokenData.find();
+
+  const aweberAuth = new ClientOAuth2({
+    clientId: clientId,
+    clientSecret: clientSecret,
+    accessTokenUri: TOKEN_URL,
+    authorizationUri: `${OAUTH_URL}/authorize`,
+    redirectUri: "https://connectsyncdata.com/callback/aweber",
+    scopes,
+  });
+
+
+  user = await aweberAuth.createToken(tokenData[0].access_token, tokenData[0].refresh_token,"bearer")
+  await ModelTokenData.updateOne({access_token:  user.data.accessToken, refresh_token: user.data.refresh_token})      
+  console.log(user, "Token data updated....")
+}
+
 async function addingSubscribers(data) {
-  let APIResult;
-  let fileReadResult;
-  try {
-    fs.accessSync("data.json", fs.constants.F_OK);
-  } catch (err) {
-    console.error("File does not exist, creating...");
-    // Create the file
-    try {
-      await getAccessToken();
-    } catch (err) {
-      console.error("Error creating file:", err);
-    }
-  }
-  // Read the file content
-  try {
-    fileReadResult = fs.readFileSync("data.json", "utf8");
-  } catch (err) {
-    console.error("Error reading file:", err);
+  const TokenDataCheck = await ModelTokenData.find();
+
+  if (TokenDataCheck.length <= 0) {
+    await getAccessToken();
   }
 
-  const fileJSONData = JSON.parse(fileReadResult);
+  const TokenData = await ModelTokenData.find();
 
-  const accessToken = fileJSONData.access_token;
+  const accessToken = TokenData[0].access_token;
 
-  //please specify the list
-
+  //please specify the list presentlistId=6550209
   const apiUrl =
     "https://api.aweber.com/1.0/accounts/1756373/lists/6550209/subscribers";
-   
- 
+
   const headers = {
     Accept: "application/json",
     "Content-Type": "application/json",
@@ -107,19 +108,19 @@ async function addingSubscribers(data) {
     email: data.Email,
   });
 
-  APIResult = fetch(apiUrl, {
+const responseStatus=  fetch(apiUrl, {
     headers: headers,
     method: "POST",
     body: body,
-  }).then(function (response,error) {
+  }).then(async function  (response) {
     if (response.status === 201) {
-      console.log("Subscriber created");
-    
+      console.log(`Subscriber created for email ${data.Email}`, response.status);
+      return
     }
-    return response.status
+     console.log(`Subscriber not created for email ${data.Email}` ,response.status)
+     
   });
-
-  return APIResult;
+  return
 }
 
 module.exports = { addingSubscribers };
